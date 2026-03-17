@@ -15,22 +15,16 @@ env:
   PROD_PROJECT: lupin-prod
   DEV_PROJECT: lupin-demo
 
-# ─────────────────────────────────────────────────────────────
-# CI JOBS
-# ─────────────────────────────────────────────────────────────
-
 jobs:
-  backend-lint:
-    name: Backend Lint
+  ci:
+    name: CI — Lint, Test, Build
     runs-on: self-hosted
-    defaults:
-      run:
-        working-directory: backend
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # ── Backend lint ──────────────────────────────────────────
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
@@ -41,37 +35,20 @@ jobs:
         with:
           version: "latest"
 
-      - name: Install dependencies
+      - name: Install backend dependencies
+        working-directory: backend
         run: uv sync
 
-      - name: Run ruff linter
+      - name: Backend lint (ruff check)
+        working-directory: backend
         run: uv run ruff check app/ tests/
 
-      - name: Run ruff formatter check
+      - name: Backend lint (ruff format)
+        working-directory: backend
         run: uv run ruff format --check app/ tests/
 
-  backend-test:
-    name: Backend Tests
-    runs-on: self-hosted
-    defaults:
-      run:
-        working-directory: backend
-
-    env:
-      DATABASE_URL: postgresql+asyncpg://user:password@localhost:5433/shouldcost_test
-      AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
-      AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
-      AZURE_OPENAI_DEPLOYMENT_NAME: ${{ secrets.AZURE_OPENAI_DEPLOYMENT_NAME }}
-      AZURE_OPENAI_API_VERSION: ${{ secrets.AZURE_OPENAI_API_VERSION }}
-      SECRET_KEY: ${{ secrets.SECRET_KEY }}
-      UPLOAD_DIR: /tmp/uploads
-      CORS_ORIGINS: '["http://localhost:3000"]'
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Start test Postgres (port 5433 to avoid conflict with local dev)
+      # ── Backend test ──────────────────────────────────────────
+      - name: Start test Postgres (port 5433)
         run: |
           docker rm -f ci-postgres 2>/dev/null || true
           docker run -d --name ci-postgres \
@@ -84,90 +61,58 @@ jobs:
             docker exec ci-postgres pg_isready -U user && break || sleep 1
           done
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: "latest"
-
-      - name: Install dependencies
-        run: uv sync
-
-      - name: Run pytest
+      - name: Backend tests
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://user:password@localhost:5433/shouldcost_test
+          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          AZURE_OPENAI_DEPLOYMENT_NAME: ${{ secrets.AZURE_OPENAI_DEPLOYMENT_NAME }}
+          AZURE_OPENAI_API_VERSION: ${{ secrets.AZURE_OPENAI_API_VERSION }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          UPLOAD_DIR: /tmp/uploads
+          CORS_ORIGINS: '["http://localhost:3000"]'
         run: uv run pytest tests/ -v --cov=app --cov-report=term-missing
 
       - name: Stop test Postgres
         if: always()
         run: docker rm -f ci-postgres 2>/dev/null || true
 
-  frontend-lint:
-    name: Frontend Lint
-    runs-on: self-hosted
-    defaults:
-      run:
-        working-directory: frontend
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
+      # ── Frontend lint & build ─────────────────────────────────
       - name: Set up Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      - name: Install dependencies
+      - name: Install frontend dependencies
+        working-directory: frontend
         run: npm ci --legacy-peer-deps
 
-      - name: Run ESLint
+      - name: Frontend lint
+        working-directory: frontend
         run: npm run lint
 
-  frontend-build:
-    name: Frontend Build
-    runs-on: self-hosted
-    defaults:
-      run:
+      - name: Frontend build
         working-directory: frontend
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Install dependencies
-        run: npm ci --legacy-peer-deps
-
-      - name: Build frontend
         run: npm run build
         env:
           VITE_API_URL: ""
           VITE_APP_NAME: AI Should Cost Engine
 
-# ─────────────────────────────────────────────────────────────
-# CD JOBS  (only on push to main, after all CI passes)
-# ─────────────────────────────────────────────────────────────
-
-  build-and-push:
-    name: Build and Push Docker Images
+  deploy:
+    name: Deploy to Self-Hosted Machine
     runs-on: self-hosted
+    needs: ci
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [backend-lint, backend-test, frontend-lint, frontend-build]
-    permissions:
-      contents: read
-      packages: write
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Write .env file
+        run: printf '%s' "${{ secrets.ENV_FILE }}" > .env
+
+      # ── Build & push images ───────────────────────────────────
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -178,32 +123,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_TOKEN }}
 
-      - name: Extract metadata for backend
-        id: meta-backend
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}/backend
-          tags: |
-            type=sha,prefix=sha-,format=short
-            type=raw,value=latest,enable={{is_default_branch}}
-
       - name: Build and push backend image
         uses: docker/build-push-action@v6
         with:
           context: ./backend
           file: ./backend/Dockerfile
           push: true
-          tags: ${{ steps.meta-backend.outputs.tags }}
-          labels: ${{ steps.meta-backend.outputs.labels }}
-
-      - name: Extract metadata for frontend
-        id: meta-frontend
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}/frontend
           tags: |
-            type=sha,prefix=sha-,format=short
-            type=raw,value=latest,enable={{is_default_branch}}
+            ${{ env.REGISTRY }}/${{ github.repository }}/backend:latest
+            ${{ env.REGISTRY }}/${{ github.repository }}/backend:${{ github.sha }}
 
       - name: Build and push frontend image
         uses: docker/build-push-action@v6
@@ -211,43 +139,18 @@ jobs:
           context: ./frontend
           file: ./frontend/Dockerfile
           push: true
-          tags: ${{ steps.meta-frontend.outputs.tags }}
-          labels: ${{ steps.meta-frontend.outputs.labels }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository }}/frontend:latest
+            ${{ env.REGISTRY }}/${{ github.repository }}/frontend:${{ github.sha }}
           build-args: |
             VITE_API_URL=
             VITE_APP_NAME=AI Should Cost Engine
 
-      - name: Summary
-        run: |
-          echo "## Images Published" >> $GITHUB_STEP_SUMMARY
-          echo "**Backend:** ${{ env.REGISTRY }}/${{ github.repository }}/backend:latest" >> $GITHUB_STEP_SUMMARY
-          echo "**Frontend:** ${{ env.REGISTRY }}/${{ github.repository }}/frontend:latest" >> $GITHUB_STEP_SUMMARY
-
-  deploy:
-    name: Deploy to Self-Hosted Machine
-    runs-on: self-hosted
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: build-and-push
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Write .env file
-        run: printf '%s' "${{ secrets.ENV_FILE }}" > .env
-
-      - name: Scale down local dev stack (free ports 3000, 8000, 5432)
+      # ── Deploy ────────────────────────────────────────────────
+      - name: Scale down dev stack (free ports)
         run: |
           docker compose -p ${{ env.DEV_PROJECT }} down --remove-orphans 2>/dev/null || true
           docker compose -p ${{ env.PROD_PROJECT }} -f docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
-
-      - name: Log in to GitHub Container Registry
-        run: echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-      - name: Pull latest images
-        run: |
-          docker pull ${{ env.REGISTRY }}/${{ github.repository }}/backend:latest
-          docker pull ${{ env.REGISTRY }}/${{ github.repository }}/frontend:latest
 
       - name: Deploy with Docker Compose
         env:
