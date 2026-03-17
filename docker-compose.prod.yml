@@ -1,8 +1,6 @@
 version: "3.9"
 
-# Production deployment — uses pre-built images from GHCR
-# Images are set via BACKEND_IMAGE and FRONTEND_IMAGE env vars
-# (injected by the CD workflow), falling back to ghcr.io defaults.
+# Production deployment — builds images locally and runs them
 
 services:
   postgres:
@@ -25,7 +23,6 @@ services:
       retries: 5
 
   backend:
-    image: ${BACKEND_IMAGE:-ghcr.io/shashidharpk-b/lupin-demo/backend:latest}
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -46,7 +43,6 @@ services:
       retries: 3
 
   frontend:
-    image: ${FRONTEND_IMAGE:-ghcr.io/shashidharpk-b/lupin-demo/frontend:latest}
     build:
       context: ./frontend
       dockerfile: Dockerfile
