@@ -59,11 +59,11 @@ jobs:
 
     env:
       DATABASE_URL: postgresql+asyncpg://user:password@localhost:5433/shouldcost_test
-      AZURE_OPENAI_ENDPOINT: https://placeholder.openai.azure.com/
-      AZURE_OPENAI_API_KEY: placeholder-key
-      AZURE_OPENAI_DEPLOYMENT_NAME: gpt-4o
-      AZURE_OPENAI_API_VERSION: 2024-02-15-preview
-      SECRET_KEY: test-secret-key-for-ci
+      AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+      AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+      AZURE_OPENAI_DEPLOYMENT_NAME: ${{ secrets.AZURE_OPENAI_DEPLOYMENT_NAME }}
+      AZURE_OPENAI_API_VERSION: ${{ secrets.AZURE_OPENAI_API_VERSION }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
       UPLOAD_DIR: /tmp/uploads
       CORS_ORIGINS: '["http://localhost:3000"]'
 
