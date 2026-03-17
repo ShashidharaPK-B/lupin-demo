@@ -57,16 +57,16 @@ jobs:
       - name: Backend — pytest
         run: |
           $testEnvFile = "$env:TEMP\ci-test.env"
-          @"
-DATABASE_URL=postgresql+asyncpg://user:password@host.docker.internal:5433/shouldcost_test
-AZURE_OPENAI_ENDPOINT=${{ secrets.AZURE_OPENAI_ENDPOINT }}
-AZURE_OPENAI_API_KEY=${{ secrets.AZURE_OPENAI_API_KEY }}
-AZURE_OPENAI_DEPLOYMENT_NAME=${{ secrets.AZURE_OPENAI_DEPLOYMENT_NAME }}
-AZURE_OPENAI_API_VERSION=${{ secrets.AZURE_OPENAI_API_VERSION }}
-SECRET_KEY=${{ secrets.SECRET_KEY }}
-UPLOAD_DIR=/tmp/uploads
-CORS_ORIGINS=["http://localhost:3000"]
-"@ | Set-Content $testEnvFile -Encoding utf8
+          @(
+            "DATABASE_URL=postgresql+asyncpg://user:password@host.docker.internal:5433/shouldcost_test",
+            "AZURE_OPENAI_ENDPOINT=${{ secrets.AZURE_OPENAI_ENDPOINT }}",
+            "AZURE_OPENAI_API_KEY=${{ secrets.AZURE_OPENAI_API_KEY }}",
+            "AZURE_OPENAI_DEPLOYMENT_NAME=${{ secrets.AZURE_OPENAI_DEPLOYMENT_NAME }}",
+            "AZURE_OPENAI_API_VERSION=${{ secrets.AZURE_OPENAI_API_VERSION }}",
+            "SECRET_KEY=${{ secrets.SECRET_KEY }}",
+            "UPLOAD_DIR=/tmp/uploads",
+            'CORS_ORIGINS=["http://localhost:3000"]'
+          ) | Set-Content $testEnvFile -Encoding utf8
           docker run --rm `
             -v "${env:GITHUB_WORKSPACE}\backend:/app" -w /app `
             --env-file $testEnvFile `
