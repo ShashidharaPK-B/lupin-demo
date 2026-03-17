@@ -19,6 +19,9 @@ jobs:
   ci:
     name: CI — Lint, Test, Build
     runs-on: self-hosted
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Checkout code
@@ -97,6 +100,9 @@ jobs:
     runs-on: self-hosted
     needs: ci
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Checkout code
