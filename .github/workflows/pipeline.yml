@@ -48,7 +48,7 @@ jobs:
       # ── Backend test ──────────────────────────────────────────
       - name: Start test Postgres (port 5433)
         run: |
-          docker rm -f ci-postgres 2>$null
+          docker rm -f ci-postgres 2>$null; $LASTEXITCODE = 0
           docker run -d --name ci-postgres `
             -e POSTGRES_USER=user `
             -e POSTGRES_PASSWORD=password `
