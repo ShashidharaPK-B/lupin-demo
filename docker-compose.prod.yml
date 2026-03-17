@@ -26,6 +26,9 @@ services:
 
   backend:
     image: ${BACKEND_IMAGE:-ghcr.io/shashidharpk-b/lupin-demo/backend:latest}
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     restart: unless-stopped
     env_file:
       - .env
@@ -44,6 +47,9 @@ services:
 
   frontend:
     image: ${FRONTEND_IMAGE:-ghcr.io/shashidharpk-b/lupin-demo/frontend:latest}
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     restart: unless-stopped
     env_file:
       - .env
