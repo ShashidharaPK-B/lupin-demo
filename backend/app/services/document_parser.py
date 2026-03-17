@@ -1,4 +1,3 @@
-import io
 from pathlib import Path
 
 import openpyxl
@@ -102,9 +101,7 @@ class DocumentParser:
             elif suffix in (".docx", ".doc"):
                 return cls.parse_word(file_path)
             else:
-                raise ValueError(
-                    f"Unsupported document type: {content_type} (extension: {suffix})"
-                )
+                raise ValueError(f"Unsupported document type: {content_type} (extension: {suffix})")
 
 
 document_parser = DocumentParser()

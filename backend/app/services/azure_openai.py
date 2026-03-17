@@ -6,7 +6,6 @@ from openai import AsyncAzureOpenAI
 from app.core.config import settings
 from app.schemas.analysis import AnalysisResult, CostLineItem
 
-
 SYSTEM_PROMPT = """You are an expert pharmaceutical and chemical manufacturing cost analyst.
 Your task is to analyze Recipe of Synthesis (ROS) documents and produce accurate should-cost estimates.
 

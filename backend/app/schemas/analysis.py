@@ -1,27 +1,24 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
-
+from pydantic import BaseModel, Field
 
 # --------------------------------------------------------------------------- #
 # Parametric Assumptions / Job Create
 # --------------------------------------------------------------------------- #
 
+
 class AnalysisJobCreate(BaseModel):
     yield_pct: float = Field(..., ge=0, le=100, description="Yield percentage (0-100)")
-    solvent_recovery_pct: float = Field(
-        ..., ge=0, le=100, description="Solvent recovery percentage (0-100)"
-    )
+    solvent_recovery_pct: float = Field(..., ge=0, le=100, description="Solvent recovery percentage (0-100)")
     city: str = Field(..., min_length=1, description="Manufacturing city / location")
-    profit_margin_pct: float = Field(
-        ..., ge=0, le=100, description="Profit margin percentage (0-100)"
-    )
+    profit_margin_pct: float = Field(..., ge=0, le=100, description="Profit margin percentage (0-100)")
 
 
 # --------------------------------------------------------------------------- #
 # Cost breakdown structures
 # --------------------------------------------------------------------------- #
+
 
 class CostLineItem(BaseModel):
     name: str
@@ -50,6 +47,7 @@ class AnalysisResult(BaseModel):
 # Job Response
 # --------------------------------------------------------------------------- #
 
+
 class AnalysisJobResponse(BaseModel):
     id: str
     project_id: str | None
@@ -71,6 +69,7 @@ class AnalysisJobResponse(BaseModel):
 # --------------------------------------------------------------------------- #
 # Project schemas
 # --------------------------------------------------------------------------- #
+
 
 class ProjectCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)

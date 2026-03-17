@@ -3,7 +3,6 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import AsyncSessionLocal
 from app.models.analysis import AnalysisJob, JobStatus
@@ -35,9 +34,7 @@ class AnalysisService:
         async with AsyncSessionLocal() as db:
             try:
                 # 1. Mark job as processing
-                result = await db.execute(
-                    select(AnalysisJob).where(AnalysisJob.id == job_id)
-                )
+                result = await db.execute(select(AnalysisJob).where(AnalysisJob.id == job_id))
                 job = result.scalar_one_or_none()
                 if job is None:
                     logger.error(f"Job {job_id} not found in database")
@@ -75,9 +72,7 @@ class AnalysisService:
             except Exception as exc:
                 logger.exception(f"Job {job_id} failed: {exc}")
                 try:
-                    result = await db.execute(
-                        select(AnalysisJob).where(AnalysisJob.id == job_id)
-                    )
+                    result = await db.execute(select(AnalysisJob).where(AnalysisJob.id == job_id))
                     job = result.scalar_one_or_none()
                     if job:
                         job.status = JobStatus.failed
@@ -85,6 +80,4 @@ class AnalysisService:
                         job.updated_at = datetime.utcnow()
                         await db.commit()
                 except Exception as inner_exc:
-                    logger.exception(
-                        f"Failed to update job {job_id} status to failed: {inner_exc}"
-                    )
+                    logger.exception(f"Failed to update job {job_id} status to failed: {inner_exc}")

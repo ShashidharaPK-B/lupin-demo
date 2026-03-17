@@ -18,14 +18,10 @@ class JobStatus(str, PyEnum):
 class Project(Base):
     __tablename__ = "projects"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     user_id: Mapped[str] = mapped_column(String(255), nullable=False, default="default")
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
@@ -39,15 +35,11 @@ class Project(Base):
 class AnalysisJob(Base):
     __tablename__ = "analysis_jobs"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     project_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True
     )
-    status: Mapped[JobStatus] = mapped_column(
-        Enum(JobStatus), default=JobStatus.pending, nullable=False
-    )
+    status: Mapped[JobStatus] = mapped_column(Enum(JobStatus), default=JobStatus.pending, nullable=False)
 
     # Parametric assumptions
     yield_pct: Mapped[float] = mapped_column(Float, nullable=False)
@@ -63,9 +55,7 @@ class AnalysisJob(Base):
     result_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )

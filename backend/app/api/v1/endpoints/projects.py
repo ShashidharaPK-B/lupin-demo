@@ -38,12 +38,7 @@ async def list_projects(
     limit: int = 50,
 ):
     """List all projects."""
-    result = await db.execute(
-        select(Project)
-        .order_by(Project.created_at.desc())
-        .offset(skip)
-        .limit(limit)
-    )
+    result = await db.execute(select(Project).order_by(Project.created_at.desc()).offset(skip).limit(limit))
     return result.scalars().all()
 
 

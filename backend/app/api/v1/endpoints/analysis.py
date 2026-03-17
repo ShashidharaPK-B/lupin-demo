@@ -1,10 +1,17 @@
-import asyncio
 import os
 import uuid
 from datetime import datetime
 
 import aiofiles
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -59,8 +66,7 @@ async def calculate_should_cost(
     if file.content_type not in allowed_types:
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported file type: {file.content_type}. "
-                   "Allowed: PDF, Excel (.xlsx/.xls), Word (.docx/.doc)",
+            detail=f"Unsupported file type: {file.content_type}. Allowed: PDF, Excel (.xlsx/.xls), Word (.docx/.doc)",
         )
 
     # Save file
@@ -124,10 +130,5 @@ async def list_analysis_jobs(
     limit: int = 50,
 ):
     """List all analysis jobs, most recent first."""
-    result = await db.execute(
-        select(AnalysisJob)
-        .order_by(AnalysisJob.created_at.desc())
-        .offset(skip)
-        .limit(limit)
-    )
+    result = await db.execute(select(AnalysisJob).order_by(AnalysisJob.created_at.desc()).offset(skip).limit(limit))
     return result.scalars().all()
