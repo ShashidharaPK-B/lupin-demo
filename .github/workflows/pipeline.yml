@@ -3,8 +3,6 @@ name: CI/CD Pipeline
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
 
 concurrency:
   group: pipeline-${{ github.ref }}
@@ -128,4 +126,4 @@ jobs:
         run: |
           Start-Sleep -Seconds 10
           docker compose -p ${{ env.PROD_PROJECT }} -f docker-compose.prod.yml ps
-          try { curl -f http://localhost:8000/health } catch { Write-Host "Health check pending — containers starting" }
+          try { curl -f http://localhost:8000/health } catch { Write-Host "Health check pending - containers starting" }
