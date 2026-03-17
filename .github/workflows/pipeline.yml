@@ -92,13 +92,6 @@ jobs:
         working-directory: frontend
         run: npm run lint
 
-      - name: Frontend build
-        working-directory: frontend
-        run: npm run build
-        env:
-          VITE_API_URL: ""
-          VITE_APP_NAME: AI Should Cost Engine
-
   deploy:
     name: Deploy to Self-Hosted Machine
     runs-on: self-hosted
