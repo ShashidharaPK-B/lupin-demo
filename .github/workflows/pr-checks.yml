@@ -1,4 +1,4 @@
-name: PR Checks
+name: PR Pre-commit Checks
 
 on:
   pull_request:
@@ -13,8 +13,8 @@ env:
   NODE_IMAGE: node:20-alpine
 
 jobs:
-  pr-checks:
-    name: PR Checks
+  pre-commit:
+    name: Pre-commit Checks
     runs-on: self-hosted
     defaults:
       run:
@@ -26,7 +26,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      # ── Secret scanning ────────────────────────────────────
       - name: Secret scan (gitleaks)
         run: >
           docker run --rm
@@ -34,31 +33,16 @@ jobs:
           ghcr.io/gitleaks/gitleaks:latest
           detect --source /repo --verbose
 
-      # ── Backend lint ───────────────────────────────────────
-      - name: Backend — lint
+      - name: Backend lint (ruff)
         run: >
           docker run --rm
           -v "${env:GITHUB_WORKSPACE}\backend:/app" -w /app
           ${{ env.UV_IMAGE }}
           sh -c "uv sync --quiet && uv run ruff check app/ tests/ && uv run ruff format --check app/ tests/"
 
-      # ── Frontend lint ──────────────────────────────────────
-      - name: Frontend — lint
-        run: |
-          $output = docker run --rm `
-            -v "${env:GITHUB_WORKSPACE}\frontend:/app" -w /app `
-            ${{ env.NODE_IMAGE }} `
-            sh -c "npm ci --legacy-peer-deps --silent 2>&1 && npm run lint 2>&1"
-          $exitCode = $LASTEXITCODE
-          Write-Host $output
-          $fence = '```'
-          Add-Content $env:GITHUB_STEP_SUMMARY "## Frontend ESLint Summary"
-          if ($exitCode -eq 0) {
-            Add-Content $env:GITHUB_STEP_SUMMARY "All checks passed - no warnings or errors"
-          } else {
-            Add-Content $env:GITHUB_STEP_SUMMARY "Lint failed:"
-            Add-Content $env:GITHUB_STEP_SUMMARY $fence
-            Add-Content $env:GITHUB_STEP_SUMMARY $output
-            Add-Content $env:GITHUB_STEP_SUMMARY $fence
-            exit $exitCode
-          }
+      - name: Frontend lint (eslint)
+        run: >
+          docker run --rm
+          -v "${env:GITHUB_WORKSPACE}\frontend:/app" -w /app
+          ${{ env.NODE_IMAGE }}
+          sh -c "npm ci --legacy-peer-deps --silent && npm run lint"
