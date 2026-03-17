@@ -1,4 +1,4 @@
-name: PR Pre-commit Checks
+name: Pre-merge Checks
 
 on:
   pull_request:
@@ -13,8 +13,8 @@ env:
   NODE_IMAGE: node:20-alpine
 
 jobs:
-  pre-commit:
-    name: Pre-commit Checks
+  pre-merge:
+    name: Pre-merge Checks
     runs-on: self-hosted
     defaults:
       run:
