@@ -14,6 +14,7 @@ env:
   REGISTRY: ghcr.io
   PROD_PROJECT: lupin-prod
   DEV_PROJECT: lupin-demo
+  UV_IMAGE: ghcr.io/astral-sh/uv:python3.11-bookworm-slim
 
 jobs:
   ci:
@@ -28,22 +29,14 @@ jobs:
         uses: actions/checkout@v4
 
       # ── Backend lint ──────────────────────────────────────────
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: "latest"
+      - name: Backend — install dependencies
+        run: docker run --rm -v "${env:GITHUB_WORKSPACE}\backend:/app" -w /app ${{ env.UV_IMAGE }} uv sync
 
-      - name: Install backend dependencies
-        working-directory: backend
-        run: uv sync
+      - name: Backend — ruff check
+        run: docker run --rm -v "${env:GITHUB_WORKSPACE}\backend:/app" -w /app ${{ env.UV_IMAGE }} uv run ruff check app/ tests/
 
-      - name: Backend lint (ruff check)
-        working-directory: backend
-        run: uv run ruff check app/ tests/
-
-      - name: Backend lint (ruff format)
-        working-directory: backend
-        run: uv run ruff format --check app/ tests/
+      - name: Backend — ruff format
+        run: docker run --rm -v "${env:GITHUB_WORKSPACE}\backend:/app" -w /app ${{ env.UV_IMAGE }} uv run ruff format --check app/ tests/
 
       # ── Backend test ──────────────────────────────────────────
       - name: Start test Postgres (port 5433)
@@ -56,51 +49,41 @@ jobs:
             -p 5433:5432 `
             postgres:16-alpine
           for ($i = 1; $i -le 30; $i++) {
-            docker exec ci-postgres pg_isready -U user 2>$null
+            docker exec ci-postgres pg_isready -U user 2>&1 | Out-Null
             if ($LASTEXITCODE -eq 0) { break }
             Start-Sleep -Seconds 1
           }
 
-      - name: Backend tests
-        working-directory: backend
-        env:
-          DATABASE_URL: postgresql+asyncpg://user:password@localhost:5433/shouldcost_test
-          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
-          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
-          AZURE_OPENAI_DEPLOYMENT_NAME: ${{ secrets.AZURE_OPENAI_DEPLOYMENT_NAME }}
-          AZURE_OPENAI_API_VERSION: ${{ secrets.AZURE_OPENAI_API_VERSION }}
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
-          UPLOAD_DIR: C:\Temp\uploads
-          CORS_ORIGINS: '["http://localhost:3000"]'
-        run: uv run pytest tests/ -v --cov=app --cov-report=term-missing
+      - name: Backend — pytest
+        run: |
+          $testEnvFile = "$env:TEMP\ci-test.env"
+          @"
+DATABASE_URL=postgresql+asyncpg://user:password@host.docker.internal:5433/shouldcost_test
+AZURE_OPENAI_ENDPOINT=${{ secrets.AZURE_OPENAI_ENDPOINT }}
+AZURE_OPENAI_API_KEY=${{ secrets.AZURE_OPENAI_API_KEY }}
+AZURE_OPENAI_DEPLOYMENT_NAME=${{ secrets.AZURE_OPENAI_DEPLOYMENT_NAME }}
+AZURE_OPENAI_API_VERSION=${{ secrets.AZURE_OPENAI_API_VERSION }}
+SECRET_KEY=${{ secrets.SECRET_KEY }}
+UPLOAD_DIR=/tmp/uploads
+CORS_ORIGINS=["http://localhost:3000"]
+"@ | Set-Content $testEnvFile -Encoding utf8
+          docker run --rm `
+            -v "${env:GITHUB_WORKSPACE}\backend:/app" -w /app `
+            --env-file $testEnvFile `
+            ${{ env.UV_IMAGE }} `
+            uv run pytest tests/ -v --cov=app --cov-report=term-missing
+          Remove-Item $testEnvFile -Force -ErrorAction SilentlyContinue
 
       - name: Stop test Postgres
         if: always()
         run: try { docker rm -f ci-postgres 2>&1 | Out-Null } catch {}
 
       # ── Frontend lint ─────────────────────────────────────────
-      - name: Add Node.js to PATH
-        run: |
-          $paths = @(
-            "C:\Program Files\nodejs",
-            "C:\Program Files (x86)\nodejs",
-            "$env:ProgramFiles\nodejs"
-          )
-          foreach ($p in $paths) {
-            if (Test-Path "$p\npm.cmd") {
-              Add-Content $env:GITHUB_PATH $p
-              Write-Host "Added Node.js to PATH: $p"
-              break
-            }
-          }
+      - name: Frontend — install dependencies
+        run: docker run --rm -v "${env:GITHUB_WORKSPACE}\frontend:/app" -w /app node:20-alpine sh -c "npm ci --legacy-peer-deps"
 
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci --legacy-peer-deps
-
-      - name: Frontend lint
-        working-directory: frontend
-        run: npm run lint
+      - name: Frontend — eslint
+        run: docker run --rm -v "${env:GITHUB_WORKSPACE}\frontend:/app" -w /app node:20-alpine sh -c "npm run lint"
 
   deploy:
     name: Deploy to Self-Hosted Machine
@@ -159,9 +142,8 @@ jobs:
       # ── Deploy ────────────────────────────────────────────────
       - name: Scale down existing stacks (free ports)
         run: |
-          docker compose -p ${{ env.DEV_PROJECT }} down --remove-orphans 2>$null
-          docker compose -p ${{ env.PROD_PROJECT }} -f docker-compose.prod.yml down --remove-orphans 2>$null
-          exit 0
+          try { docker compose -p ${{ env.DEV_PROJECT }} down --remove-orphans 2>&1 | Out-Null } catch {}
+          try { docker compose -p ${{ env.PROD_PROJECT }} -f docker-compose.prod.yml down --remove-orphans 2>&1 | Out-Null } catch {}
 
       - name: Deploy with Docker Compose
         env:
