@@ -75,11 +75,22 @@ jobs:
         run: try { docker rm -f ci-postgres 2>&1 | Out-Null } catch {}
 
       - name: Frontend — lint
-        run: >
-          docker run --rm
-          -v "${env:GITHUB_WORKSPACE}\frontend:/app" -w /app
-          ${{ env.NODE_IMAGE }}
-          sh -c "npm ci --legacy-peer-deps --silent && npm run lint"
+        run: |
+          $output = docker run --rm `
+            -v "${env:GITHUB_WORKSPACE}\frontend:/app" -w /app `
+            ${{ env.NODE_IMAGE }} `
+            sh -c "npm ci --legacy-peer-deps --silent 2>&1 && npm run lint 2>&1"
+          $exitCode = $LASTEXITCODE
+          Write-Host $output
+          Add-Content $env:GITHUB_STEP_SUMMARY "## Frontend ESLint Summary"
+          if ($exitCode -eq 0) {
+            Add-Content $env:GITHUB_STEP_SUMMARY "✅ All checks passed — no warnings or errors"
+          } else {
+            Add-Content $env:GITHUB_STEP_SUMMARY "❌ Lint failed:`n``````"
+            Add-Content $env:GITHUB_STEP_SUMMARY $output
+            Add-Content $env:GITHUB_STEP_SUMMARY "``````"
+            exit $exitCode
+          }
 
   deploy:
     name: Deploy
