@@ -79,6 +79,21 @@ jobs:
         run: try { docker rm -f ci-postgres 2>&1 | Out-Null } catch {}
 
       # ── Frontend lint ─────────────────────────────────────────
+      - name: Add Node.js to PATH
+        run: |
+          $paths = @(
+            "C:\Program Files\nodejs",
+            "C:\Program Files (x86)\nodejs",
+            "$env:ProgramFiles\nodejs"
+          )
+          foreach ($p in $paths) {
+            if (Test-Path "$p\npm.cmd") {
+              Add-Content $env:GITHUB_PATH $p
+              Write-Host "Added Node.js to PATH: $p"
+              break
+            }
+          }
+
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci --legacy-peer-deps
