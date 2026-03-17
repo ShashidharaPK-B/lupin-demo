@@ -21,7 +21,7 @@ jobs:
     runs-on: self-hosted
     defaults:
       run:
-        shell: bash
+        shell: pwsh
 
     steps:
       - name: Checkout code
@@ -48,16 +48,18 @@ jobs:
       # ── Backend test ──────────────────────────────────────────
       - name: Start test Postgres (port 5433)
         run: |
-          docker rm -f ci-postgres 2>/dev/null || true
-          docker run -d --name ci-postgres \
-            -e POSTGRES_USER=user \
-            -e POSTGRES_PASSWORD=password \
-            -e POSTGRES_DB=shouldcost_test \
-            -p 5433:5432 \
+          docker rm -f ci-postgres 2>$null
+          docker run -d --name ci-postgres `
+            -e POSTGRES_USER=user `
+            -e POSTGRES_PASSWORD=password `
+            -e POSTGRES_DB=shouldcost_test `
+            -p 5433:5432 `
             postgres:16-alpine
-          for i in $(seq 1 30); do
-            docker exec ci-postgres pg_isready -U user && break || sleep 1
-          done
+          for ($i = 1; $i -le 30; $i++) {
+            docker exec ci-postgres pg_isready -U user 2>$null
+            if ($LASTEXITCODE -eq 0) { break }
+            Start-Sleep -Seconds 1
+          }
 
       - name: Backend tests
         working-directory: backend
@@ -68,13 +70,13 @@ jobs:
           AZURE_OPENAI_DEPLOYMENT_NAME: ${{ secrets.AZURE_OPENAI_DEPLOYMENT_NAME }}
           AZURE_OPENAI_API_VERSION: ${{ secrets.AZURE_OPENAI_API_VERSION }}
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
-          UPLOAD_DIR: /tmp/uploads
+          UPLOAD_DIR: C:\Temp\uploads
           CORS_ORIGINS: '["http://localhost:3000"]'
         run: uv run pytest tests/ -v --cov=app --cov-report=term-missing
 
       - name: Stop test Postgres
         if: always()
-        run: docker rm -f ci-postgres 2>/dev/null || true
+        run: docker rm -f ci-postgres 2>$null; exit 0
 
       # ── Frontend lint ─────────────────────────────────────────
       - name: Install frontend dependencies
@@ -92,14 +94,18 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     defaults:
       run:
-        shell: bash
+        shell: pwsh
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Write .env file
-        run: printf '%s' "${{ secrets.ENV_FILE }}" > .env
+        run: |
+          $content = @'
+          ${{ secrets.ENV_FILE }}
+          '@
+          [System.IO.File]::WriteAllText(".env", $content.Trim())
 
       # ── Build & push images ───────────────────────────────────
       - name: Set up Docker Buildx
@@ -136,10 +142,11 @@ jobs:
             VITE_APP_NAME=AI Should Cost Engine
 
       # ── Deploy ────────────────────────────────────────────────
-      - name: Scale down dev stack (free ports)
+      - name: Scale down existing stacks (free ports)
         run: |
-          docker compose -p ${{ env.DEV_PROJECT }} down --remove-orphans 2>/dev/null || true
-          docker compose -p ${{ env.PROD_PROJECT }} -f docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
+          docker compose -p ${{ env.DEV_PROJECT }} down --remove-orphans 2>$null
+          docker compose -p ${{ env.PROD_PROJECT }} -f docker-compose.prod.yml down --remove-orphans 2>$null
+          exit 0
 
       - name: Deploy with Docker Compose
         env:
@@ -149,13 +156,13 @@ jobs:
 
       - name: Verify deployment
         run: |
-          sleep 10
+          Start-Sleep -Seconds 10
           docker compose -p ${{ env.PROD_PROJECT }} -f docker-compose.prod.yml ps
           curl -f http://localhost:8000/health
 
       - name: Deployment summary
         run: |
-          echo "## Deployment Complete" >> $GITHUB_STEP_SUMMARY
-          echo "- **Frontend:** http://localhost:3000" >> $GITHUB_STEP_SUMMARY
-          echo "- **Backend:** http://localhost:8000" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          Add-Content $env:GITHUB_STEP_SUMMARY "## Deployment Complete"
+          Add-Content $env:GITHUB_STEP_SUMMARY "- **Frontend:** http://localhost:3000"
+          Add-Content $env:GITHUB_STEP_SUMMARY "- **Backend:** http://localhost:8000"
+          Add-Content $env:GITHUB_STEP_SUMMARY "- **Commit:** ``${{ github.sha }}``"
