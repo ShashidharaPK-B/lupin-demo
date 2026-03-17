@@ -151,9 +151,6 @@ jobs:
           FRONTEND_IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}/frontend:latest
         run: docker compose -p ${{ env.PROD_PROJECT }} -f docker-compose.prod.yml up -d --remove-orphans
 
-      - name: Run database migrations
-        run: docker compose -p ${{ env.PROD_PROJECT }} -f docker-compose.prod.yml exec -T backend alembic upgrade head
-
       - name: Verify deployment
         run: |
           sleep 10
