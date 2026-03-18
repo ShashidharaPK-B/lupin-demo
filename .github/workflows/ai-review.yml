@@ -1,7 +1,6 @@
 name: AI Code Review
 
 on:
-  # Auto-run on new PRs
   pull_request:
     branches: [main]
 
@@ -25,16 +24,105 @@ jobs:
        contains(github.event.comment.body, '/review'))
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
       - name: Run AI review
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
-          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
-          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
-          AZURE_OPENAI_DEPLOYMENT_NAME: ${{ secrets.AZURE_OPENAI_DEPLOYMENT_NAME }}
-          AZURE_OPENAI_API_VERSION: ${{ secrets.AZURE_OPENAI_API_VERSION }}
-        run: python .github/scripts/ai-review.py
+          AZURE_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+          AZURE_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          AZURE_DEPLOYMENT: ${{ secrets.AZURE_OPENAI_DEPLOYMENT_NAME }}
+          AZURE_API_VERSION: ${{ secrets.AZURE_OPENAI_API_VERSION }}
+        run: |
+          try {
+            # ── 1. Fetch PR diff ──
+            Write-Host "Fetching diff for PR #$env:PR_NUMBER..."
+            $headers = @{
+              Authorization = "token $env:GITHUB_TOKEN"
+              Accept        = "application/vnd.github.v3.diff"
+            }
+            $diff = Invoke-RestMethod -Uri "https://api.github.com/repos/$env:GH_REPO/pulls/$env:PR_NUMBER" -Headers $headers -Method Get
+
+            if (-not $diff -or $diff.Trim().Length -eq 0) {
+              Write-Host "No diff found - skipping review."
+              exit 0
+            }
+
+            # Truncate large diffs
+            $maxChars = 12000
+            if ($diff.Length -gt $maxChars) {
+              $diff = $diff.Substring(0, $maxChars) + "`n`n... (diff truncated due to size)"
+              Write-Host "Diff truncated to $maxChars chars"
+            }
+            Write-Host "Diff size: $($diff.Length) chars. Sending to Azure OpenAI..."
+
+            # ── 2. Build review prompt ──
+            $systemPrompt = @"
+          You are a senior software engineer performing a code review on a GitHub Pull Request.
+
+          Review the provided diff and give actionable feedback. Focus on:
+
+          1. **Bugs & Logic Errors** - Incorrect logic, off-by-one errors, null/undefined issues, race conditions
+          2. **Security** - Hardcoded secrets, injection risks, improper input validation, insecure defaults
+          3. **Performance** - Unnecessary loops, missing indexes, N+1 queries, large memory allocations
+          4. **Best Practices** - Naming conventions, code duplication, missing error handling, proper typing
+          5. **Readability** - Confusing variable names, overly complex expressions, missing context
+
+          Rules:
+          - Only comment on the CHANGED lines (lines starting with + or -)
+          - Be specific - reference file names and line numbers from the diff
+          - If the code looks good, say so briefly - do not invent issues
+          - Keep feedback concise and actionable
+          - Use markdown formatting for readability
+          - Rate the overall PR: Approved / Minor Changes / Changes Requested
+
+          Format your response as:
+          ## AI Code Review
+
+          ### Overall: [Approved / Minor Changes / Changes Requested]
+
+          ### Findings
+          (list findings here, or "No issues found - code looks good!")
+
+          ---
+          *Automated review by Azure OpenAI*
+          "@
+
+            # ── 3. Call Azure OpenAI ──
+            $endpoint = $env:AZURE_ENDPOINT.TrimEnd("/")
+            $url = "$endpoint/openai/deployments/$env:AZURE_DEPLOYMENT/chat/completions?api-version=$env:AZURE_API_VERSION"
+
+            $body = @{
+              messages    = @(
+                @{ role = "system"; content = $systemPrompt }
+                @{ role = "user"; content = "Here is the PR diff to review:`n`n$diff" }
+              )
+              temperature = 0.3
+              max_tokens  = 2000
+            } | ConvertTo-Json -Depth 5
+
+            $aiHeaders = @{
+              "Content-Type" = "application/json"
+              "api-key"      = $env:AZURE_API_KEY
+            }
+            $response = Invoke-RestMethod -Uri $url -Method Post -Headers $aiHeaders -Body $body -TimeoutSec 60
+            $review = $response.choices[0].message.content
+
+            Write-Host "Review received:"
+            Write-Host $review
+
+            # ── 4. Post comment on PR ──
+            $commentBody = @{ body = $review } | ConvertTo-Json
+            $ghHeaders = @{
+              Authorization  = "token $env:GITHUB_TOKEN"
+              Accept         = "application/vnd.github.v3+json"
+              "Content-Type" = "application/json"
+            }
+            Invoke-RestMethod -Uri "https://api.github.com/repos/$env:GH_REPO/issues/$env:PR_NUMBER/comments" -Method Post -Headers $ghHeaders -Body $commentBody
+
+            Write-Host "Review posted to PR #$env:PR_NUMBER"
+          } catch {
+            Write-Host "AI review failed: $_"
+            # Advisory only - don't fail the workflow
+            exit 0
+          }
