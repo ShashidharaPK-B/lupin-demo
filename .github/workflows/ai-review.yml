@@ -130,23 +130,45 @@ jobs:
           - For each finding, indicate severity: [Critical], [Warning], or [Suggestion]
           - Rate the overall PR: Approved / Minor Changes / Changes Requested
 
-          Format your response as:
+          Format your response EXACTLY as shown below:
 
           ## AI Code Review
 
-          **PR:** $prTitle
-
-          ### Overall: [Approved / Minor Changes / Changes Requested]
+          | Field | Details |
+          |-------|---------|
+          | **PR** | $prTitle |
+          | **Verdict** | Approved / Minor Changes / Changes Requested |
+          | **Files Changed** | (count of files in the diff) |
+          | **Risk Level** | Low / Medium / High |
+          | **Review Focus** | (the focus area if specified, or "Full Review") |
 
           ### Summary
-          (1-2 sentence summary of what this PR does)
+          (2-3 sentence summary of what this PR does and its impact)
 
-          ### Findings
+          ### Findings Summary
 
-          #### [Severity] File - Description
-          (details and suggested fix)
+          | # | Severity | File | Line | Finding | Suggested Fix |
+          |---|----------|------|------|---------|---------------|
+          | 1 | Critical / Warning / Suggestion | filename.py | L42 | Short description | Brief fix |
 
-          (or "No issues found - code looks good!")
+          (If no issues: show a single row with Suggestion severity saying "No issues found - code looks good!")
+
+          ### Severity Legend
+
+          | Severity | Meaning |
+          |----------|---------|
+          | **Critical** | Must fix before merge - bugs, security vulnerabilities, data loss risks |
+          | **Warning** | Should fix - potential issues, bad practices, maintainability concerns |
+          | **Suggestion** | Nice to have - improvements, style, minor optimizations |
+
+          ### Detailed Findings
+          (For each finding from the table above, provide details with code snippets if applicable)
+
+          **Finding #1: [Short title]**
+          - **File:** `filename.py` Line 42
+          - **Severity:** Critical / Warning / Suggestion
+          - **Issue:** Detailed explanation of the problem
+          - **Suggestion:** How to fix it with code example if needed
 
           ---
           *Automated review powered by Azure OpenAI | Triggered by: $comment*
