@@ -40,3 +40,12 @@ app.include_router(api_router)
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy", "service": "ai-should-cost-engine"}
+
+
+@app.get("/version", tags=["health"])
+async def version():
+    """Return app version and environment."""
+    return {
+        "version": "0.1.0",
+        "environment": os.getenv("ENVIRONMENT", "development"),
+    }
