@@ -47,20 +47,10 @@ jobs:
       - name: AI Code Review
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
           AZURE_OPENAI_DEPLOYMENT_NAME: ${{ secrets.AZURE_OPENAI_DEPLOYMENT_NAME }}
           AZURE_OPENAI_API_VERSION: ${{ secrets.AZURE_OPENAI_API_VERSION }}
-        run: >
-          docker run --rm
-          -v "${env:GITHUB_WORKSPACE}:/repo" -w /repo
-          -e GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
-          -e GITHUB_REPOSITORY=${{ github.repository }}
-          -e PR_NUMBER=${{ github.event.pull_request.number }}
-          -e AZURE_OPENAI_ENDPOINT=${{ secrets.AZURE_OPENAI_ENDPOINT }}
-          -e AZURE_OPENAI_API_KEY=${{ secrets.AZURE_OPENAI_API_KEY }}
-          -e AZURE_OPENAI_DEPLOYMENT_NAME=${{ secrets.AZURE_OPENAI_DEPLOYMENT_NAME }}
-          -e AZURE_OPENAI_API_VERSION=${{ secrets.AZURE_OPENAI_API_VERSION }}
-          python:3.11-slim
-          python .github/scripts/ai-review.py
+        run: python .github/scripts/ai-review.py
