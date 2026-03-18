@@ -1,0 +1,40 @@
+name: AI Code Review
+
+on:
+  # Auto-run on new PRs
+  pull_request:
+    branches: [main]
+
+  # Run on /review comment
+  issue_comment:
+    types: [created]
+
+jobs:
+  review:
+    name: AI Code Review
+    runs-on: self-hosted
+    defaults:
+      run:
+        shell: powershell
+
+    # Run if: PR opened/updated, OR someone comments "/review" on a PR
+    if: >
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       contains(github.event.comment.body, '/review'))
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run AI review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          AZURE_OPENAI_DEPLOYMENT_NAME: ${{ secrets.AZURE_OPENAI_DEPLOYMENT_NAME }}
+          AZURE_OPENAI_API_VERSION: ${{ secrets.AZURE_OPENAI_API_VERSION }}
+        run: python .github/scripts/ai-review.py

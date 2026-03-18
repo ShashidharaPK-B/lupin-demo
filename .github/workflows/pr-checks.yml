@@ -43,3 +43,4 @@ jobs:
             -v "${env:GITHUB_WORKSPACE}\frontend:/app" -w /app `
             ${{ env.NODE_IMAGE }} `
             sh -c "npm ci --legacy-peer-deps --silent && npm run lint"
+
