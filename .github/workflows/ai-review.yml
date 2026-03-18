@@ -8,6 +8,11 @@ on:
   issue_comment:
     types: [created]
 
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
 jobs:
   review:
     name: AI Code Review
@@ -34,6 +39,7 @@ jobs:
           AZURE_DEPLOYMENT: ${{ secrets.AZURE_OPENAI_DEPLOYMENT_NAME }}
           AZURE_API_VERSION: ${{ secrets.AZURE_OPENAI_API_VERSION }}
         run: |
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
           try {
             # ── 1. Fetch PR diff ──
             Write-Host "Fetching diff for PR #$env:PR_NUMBER..."
@@ -74,6 +80,7 @@ jobs:
           - If the code looks good, say so briefly - do not invent issues
           - Keep feedback concise and actionable
           - Use markdown formatting for readability
+          - Do NOT use emoji characters anywhere in your response
           - Rate the overall PR: Approved / Minor Changes / Changes Requested
 
           Format your response as:
@@ -102,10 +109,11 @@ jobs:
             } | ConvertTo-Json -Depth 5
 
             $aiHeaders = @{
-              "Content-Type" = "application/json"
+              "Content-Type" = "application/json; charset=utf-8"
               "api-key"      = $env:AZURE_API_KEY
             }
-            $response = Invoke-RestMethod -Uri $url -Method Post -Headers $aiHeaders -Body $body -TimeoutSec 60
+            $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes($body)
+            $response = Invoke-RestMethod -Uri $url -Method Post -Headers $aiHeaders -Body $bodyBytes -TimeoutSec 60
             $review = $response.choices[0].message.content
 
             Write-Host "Review received:"
@@ -113,12 +121,13 @@ jobs:
 
             # ── 4. Post comment on PR ──
             $commentBody = @{ body = $review } | ConvertTo-Json
+            $commentBytes = [System.Text.Encoding]::UTF8.GetBytes($commentBody)
             $ghHeaders = @{
               Authorization  = "token $env:GITHUB_TOKEN"
               Accept         = "application/vnd.github.v3+json"
-              "Content-Type" = "application/json"
+              "Content-Type" = "application/json; charset=utf-8"
             }
-            Invoke-RestMethod -Uri "https://api.github.com/repos/$env:GH_REPO/issues/$env:PR_NUMBER/comments" -Method Post -Headers $ghHeaders -Body $commentBody
+            Invoke-RestMethod -Uri "https://api.github.com/repos/$env:GH_REPO/issues/$env:PR_NUMBER/comments" -Method Post -Headers $ghHeaders -Body $commentBytes
 
             Write-Host "Review posted to PR #$env:PR_NUMBER"
           } catch {
