@@ -3,8 +3,8 @@ name: AI Code Review
 on:
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened]
 
-  # Run on /review comment
   issue_comment:
     types: [created]
 
@@ -12,6 +12,10 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
 
 jobs:
   review:
@@ -21,14 +25,30 @@ jobs:
       run:
         shell: powershell
 
-    # Run if: PR opened/updated, OR someone comments "/review" on a PR
+    # PR opened/updated, OR /review or /review security or /review performance comment on a PR
     if: >
       github.event_name == 'pull_request' ||
       (github.event_name == 'issue_comment' &&
        github.event.issue.pull_request &&
-       contains(github.event.comment.body, '/review'))
+       startsWith(github.event.comment.body, '/review'))
 
     steps:
+      - name: React to comment
+        if: github.event_name == 'issue_comment'
+        run: |
+          try {
+            $headers = @{
+              Authorization  = "token $env:GITHUB_TOKEN"
+              Accept         = "application/vnd.github.v3+json"
+              "Content-Type" = "application/json"
+            }
+            $body = '{"content":"eyes"}'
+            Invoke-RestMethod -Uri "https://api.github.com/repos/$env:GH_REPO/issues/comments/${{ github.event.comment.id }}/reactions" -Method Post -Headers $headers -Body $body
+          } catch {}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+
       - name: Run AI review
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -38,16 +58,25 @@ jobs:
           AZURE_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
           AZURE_DEPLOYMENT: ${{ secrets.AZURE_OPENAI_DEPLOYMENT_NAME }}
           AZURE_API_VERSION: ${{ secrets.AZURE_OPENAI_API_VERSION }}
+          COMMENT_BODY: ${{ github.event.comment.body || '/review' }}
         run: |
           [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
           try {
-            # ── 1. Fetch PR diff ──
+            # ── 1. Fetch PR details and diff ──
             Write-Host "Fetching diff for PR #$env:PR_NUMBER..."
             $headers = @{
               Authorization = "token $env:GITHUB_TOKEN"
+              Accept        = "application/vnd.github.v3+json"
+            }
+            $prInfo = Invoke-RestMethod -Uri "https://api.github.com/repos/$env:GH_REPO/pulls/$env:PR_NUMBER" -Headers $headers -Method Get
+            $prTitle = $prInfo.title
+            $prBody = $prInfo.body
+
+            $diffHeaders = @{
+              Authorization = "token $env:GITHUB_TOKEN"
               Accept        = "application/vnd.github.v3.diff"
             }
-            $diff = Invoke-RestMethod -Uri "https://api.github.com/repos/$env:GH_REPO/pulls/$env:PR_NUMBER" -Headers $headers -Method Get
+            $diff = Invoke-RestMethod -Uri "https://api.github.com/repos/$env:GH_REPO/pulls/$env:PR_NUMBER" -Headers $diffHeaders -Method Get
 
             if (-not $diff -or $diff.Trim().Length -eq 0) {
               Write-Host "No diff found - skipping review."
@@ -55,24 +84,41 @@ jobs:
             }
 
             # Truncate large diffs
-            $maxChars = 12000
+            $maxChars = 15000
             if ($diff.Length -gt $maxChars) {
               $diff = $diff.Substring(0, $maxChars) + "`n`n... (diff truncated due to size)"
               Write-Host "Diff truncated to $maxChars chars"
             }
-            Write-Host "Diff size: $($diff.Length) chars. Sending to Azure OpenAI..."
+            Write-Host "Diff size: $($diff.Length) chars"
 
-            # ── 2. Build review prompt ──
+            # ── 2. Determine review focus ──
+            $comment = $env:COMMENT_BODY.Trim()
+            $focusArea = ""
+            if ($comment -match "^/review\s+(.+)$") {
+              $focusArea = $Matches[1]
+              Write-Host "Review focus: $focusArea"
+            }
+
+            $focusInstruction = ""
+            if ($focusArea) {
+              $focusInstruction = "`nIMPORTANT: The reviewer specifically asked you to focus on: **$focusArea**. Prioritize this area in your review.`n"
+            }
+
+            # ── 3. Build review prompt ──
             $systemPrompt = @"
-          You are a senior software engineer performing a code review on a GitHub Pull Request.
+          You are a senior software engineer performing a thorough code review on a GitHub Pull Request.
 
-          Review the provided diff and give actionable feedback. Focus on:
+          PR Title: $prTitle
+          PR Description: $prBody
+          $focusInstruction
 
-          1. **Bugs & Logic Errors** - Incorrect logic, off-by-one errors, null/undefined issues, race conditions
-          2. **Security** - Hardcoded secrets, injection risks, improper input validation, insecure defaults
-          3. **Performance** - Unnecessary loops, missing indexes, N+1 queries, large memory allocations
-          4. **Best Practices** - Naming conventions, code duplication, missing error handling, proper typing
-          5. **Readability** - Confusing variable names, overly complex expressions, missing context
+          Review the provided diff and give actionable feedback. Analyze for:
+
+          1. **Bugs and Logic Errors** - Incorrect logic, off-by-one errors, null/undefined issues, race conditions, unhandled edge cases
+          2. **Security** - Hardcoded secrets, injection risks (SQL, XSS, command), improper input validation, insecure defaults, missing auth checks
+          3. **Performance** - Unnecessary loops, missing indexes, N+1 queries, large memory allocations, blocking calls in async code
+          4. **Best Practices** - Naming conventions, code duplication, missing error handling, proper typing, SOLID principles
+          5. **Readability** - Confusing variable names, overly complex expressions, missing context for non-obvious logic
 
           Rules:
           - Only comment on the CHANGED lines (lines starting with + or -)
@@ -81,21 +127,33 @@ jobs:
           - Keep feedback concise and actionable
           - Use markdown formatting for readability
           - Do NOT use emoji characters anywhere in your response
+          - For each finding, indicate severity: [Critical], [Warning], or [Suggestion]
           - Rate the overall PR: Approved / Minor Changes / Changes Requested
 
           Format your response as:
+
           ## AI Code Review
+
+          **PR:** $prTitle
 
           ### Overall: [Approved / Minor Changes / Changes Requested]
 
+          ### Summary
+          (1-2 sentence summary of what this PR does)
+
           ### Findings
-          (list findings here, or "No issues found - code looks good!")
+
+          #### [Severity] File - Description
+          (details and suggested fix)
+
+          (or "No issues found - code looks good!")
 
           ---
-          *Automated review by Azure OpenAI*
+          *Automated review powered by Azure OpenAI | Triggered by: $comment*
           "@
 
-            # ── 3. Call Azure OpenAI ──
+            # ── 4. Call Azure OpenAI ──
+            Write-Host "Sending to Azure OpenAI..."
             $endpoint = $env:AZURE_ENDPOINT.TrimEnd("/")
             $url = "$endpoint/openai/deployments/$env:AZURE_DEPLOYMENT/chat/completions?api-version=$env:AZURE_API_VERSION"
 
@@ -104,8 +162,8 @@ jobs:
                 @{ role = "system"; content = $systemPrompt }
                 @{ role = "user"; content = "Here is the PR diff to review:`n`n$diff" }
               )
-              temperature = 0.3
-              max_tokens  = 2000
+              temperature = 0.2
+              max_tokens  = 3000
             } | ConvertTo-Json -Depth 5
 
             $aiHeaders = @{
@@ -113,14 +171,14 @@ jobs:
               "api-key"      = $env:AZURE_API_KEY
             }
             $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes($body)
-            $response = Invoke-RestMethod -Uri $url -Method Post -Headers $aiHeaders -Body $bodyBytes -TimeoutSec 60
+            $response = Invoke-RestMethod -Uri $url -Method Post -Headers $aiHeaders -Body $bodyBytes -TimeoutSec 90
             $review = $response.choices[0].message.content
 
             Write-Host "Review received:"
             Write-Host $review
 
-            # ── 4. Post comment on PR ──
-            $commentBody = @{ body = $review } | ConvertTo-Json
+            # ── 5. Post comment on PR ──
+            $commentBody = @{ body = $review } | ConvertTo-Json -Depth 3
             $commentBytes = [System.Text.Encoding]::UTF8.GetBytes($commentBody)
             $ghHeaders = @{
               Authorization  = "token $env:GITHUB_TOKEN"
@@ -130,8 +188,15 @@ jobs:
             Invoke-RestMethod -Uri "https://api.github.com/repos/$env:GH_REPO/issues/$env:PR_NUMBER/comments" -Method Post -Headers $ghHeaders -Body $commentBytes
 
             Write-Host "Review posted to PR #$env:PR_NUMBER"
+
+            # ── 6. Add reaction to confirm completion ──
+            if ("${{ github.event_name }}" -eq "issue_comment") {
+              try {
+                $body = '{"content":"rocket"}'
+                Invoke-RestMethod -Uri "https://api.github.com/repos/$env:GH_REPO/issues/comments/${{ github.event.comment.id }}/reactions" -Method Post -Headers $ghHeaders -Body $body
+              } catch {}
+            }
           } catch {
             Write-Host "AI review failed: $_"
-            # Advisory only - don't fail the workflow
             exit 0
           }
