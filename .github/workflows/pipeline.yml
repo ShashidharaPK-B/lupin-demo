@@ -105,14 +105,11 @@ jobs:
       # ── Step 4: SonarQube Scan ──
       - name: SonarQube scan
         run: |
-          npm install -g @sonar/scan
-          sonar `
-            -Dsonar.host.url="${{ secrets.SONAR_HOST_URL }}" `
-            -Dsonar.token="${{ secrets.SONAR_TOKEN }}" `
-            -Dsonar.projectKey="${{ secrets.SONAR_PROJECT_KEY }}" `
-            -Dsonar.sources="app/backend/app,app/frontend/src" `
-            -Dsonar.exclusions="**/node_modules/**,**/.venv/**,**/dist/**,**/__pycache__/**" `
-            -Dsonar.python.version=3.11
+          docker run --rm `
+            -v "${env:GITHUB_WORKSPACE}:/usr/src" -w /usr/src `
+            --add-host=host.docker.internal:host-gateway `
+            ${{ env.NODE_IMAGE }} `
+            sh -c "npm install -g @sonar/scan && sonar -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} -Dsonar.token=${{ secrets.SONAR_TOKEN }} -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }} -Dsonar.sources=app/backend/app,app/frontend/src -Dsonar.exclusions=**/node_modules/**,**/.venv/**,**/dist/**,**/__pycache__/** -Dsonar.python.version=3.11"
           if ($LASTEXITCODE -ne 0) {
             Write-Host "SonarQube scan failed - check configuration"
             exit $LASTEXITCODE
