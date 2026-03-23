@@ -21,6 +21,9 @@ dependencies = [
     "passlib[bcrypt]>=1.7.4",
     "aiofiles>=24.1.0",
     "redis[hiredis]>=5.0.0",
+    "langgraph>=0.2.0",
+    "langchain-openai>=0.2.0",
+    "langchain-core>=0.3.0",
 ]
 
 [dependency-groups]

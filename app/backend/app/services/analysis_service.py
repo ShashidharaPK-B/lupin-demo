@@ -4,17 +4,17 @@ from typing import Any
 
 from sqlalchemy import select
 
+from app.agents.graph import workflow
 from app.core.database import AsyncSessionLocal
 from app.core.redis import cache_delete, cache_set
 from app.models.analysis import AnalysisJob, JobStatus
-from app.services.azure_openai import azure_openai_service
 from app.services.document_parser import document_parser
 
 logger = logging.getLogger(__name__)
 
 
 class AnalysisService:
-    """Orchestrates document parsing and AI cost analysis."""
+    """Orchestrates document parsing and multi-agent AI cost analysis via LangGraph."""
 
     @staticmethod
     async def run_analysis(
@@ -24,13 +24,9 @@ class AnalysisService:
         assumptions: dict[str, Any],
     ) -> None:
         """
-        Background task: parse document -> call Azure OpenAI -> save result to DB.
+        Background task: parse document -> run LangGraph agent workflow -> save result to DB.
 
-        Args:
-            job_id: UUID of the AnalysisJob record
-            file_path: Path to the uploaded document
-            content_type: MIME type of the document
-            assumptions: Dict with yield_pct, solvent_recovery_pct, city, profit_margin_pct
+        Workflow: Orchestrator → Planner → [Cost, Vendor, Process] Agents → Reporter
         """
         async with AsyncSessionLocal() as db:
             try:
@@ -55,15 +51,40 @@ class AnalysisService:
                         "Please ensure the file is not empty or password-protected."
                     )
 
-                # 3. Call Azure OpenAI
-                logger.info(f"Calling Azure OpenAI for job {job_id}")
-                analysis_result = await azure_openai_service.analyze_document(
-                    document_text=document_text,
-                    assumptions=assumptions,
-                )
+                # 3. Run LangGraph multi-agent workflow
+                logger.info(f"Running agent workflow for job {job_id}")
+                initial_state = {
+                    "document_text": document_text,
+                    "assumptions": assumptions,
+                }
 
-                # 4. Save result
-                result_data = analysis_result.model_dump()
+                final_state = await workflow.ainvoke(initial_state)
+
+                # Check for workflow errors
+                if final_state.get("error"):
+                    raise ValueError(f"Agent workflow error: {final_state['error']}")
+
+                # 4. Extract report from final state
+                report = final_state.get("report", {})
+                result_data = {
+                    "material_cost": report.get("material_cost", 0),
+                    "labor_cost": report.get("labor_cost", 0),
+                    "overhead_cost": report.get("overhead_cost", 0),
+                    "profit": report.get("profit", 0),
+                    "total_cost": report.get("total_cost", 0),
+                    "per_unit_cost": report.get("per_unit_cost", 0),
+                    "currency": report.get("currency", "USD"),
+                    "assumptions": report.get("assumptions", assumptions),
+                    "line_items": report.get("line_items", []),
+                    "summary": report.get("summary"),
+                    "vendor_insights": report.get("vendor_insights"),
+                    "process_insights": report.get("process_insights"),
+                    # Agent metadata
+                    "agent_plan": final_state.get("plan"),
+                    "vendor_analysis": final_state.get("vendor_analysis"),
+                    "process_optimization": final_state.get("process_optimization"),
+                }
+
                 job.status = JobStatus.completed
                 job.result_json = result_data
                 job.updated_at = datetime.utcnow()
