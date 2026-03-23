@@ -44,11 +44,11 @@ async def optimize_process(state: AgentState) -> AgentState:
     user_prompt = f"""Analyze the manufacturing process in this document for optimization opportunities.
 
 ## Current Assumptions
-- Yield: {state['assumptions']['yield_pct']}%
-- Solvent Recovery: {state['assumptions']['solvent_recovery_pct']}%
+- Yield: {state["assumptions"]["yield_pct"]}%
+- Solvent Recovery: {state["assumptions"]["solvent_recovery_pct"]}%
 
 ## Document
-{state['document_text'][:8000]}
+{state["document_text"][:8000]}
 """
 
     try:

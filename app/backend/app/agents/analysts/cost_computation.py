@@ -67,13 +67,13 @@ async def compute_costs(state: AgentState) -> AgentState:
     user_prompt = f"""Compute the should-cost for this ROS document.
 
 ## Assumptions
-- Yield: {assumptions['yield_pct']}%
-- Solvent Recovery: {assumptions['solvent_recovery_pct']}%
-- Location: {assumptions['city']}
-- Profit Margin: {assumptions['profit_margin_pct']}%
+- Yield: {assumptions["yield_pct"]}%
+- Solvent Recovery: {assumptions["solvent_recovery_pct"]}%
+- Location: {assumptions["city"]}
+- Profit Margin: {assumptions["profit_margin_pct"]}%
 
 ## Document
-{state['document_text']}
+{state["document_text"]}
 """
 
     try:

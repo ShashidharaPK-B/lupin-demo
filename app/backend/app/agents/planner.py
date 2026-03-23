@@ -43,10 +43,10 @@ async def plan(state: AgentState) -> AgentState:
 {document_text[:3000]}
 
 ## User Assumptions
-- Yield: {assumptions['yield_pct']}%
-- Solvent Recovery: {assumptions['solvent_recovery_pct']}%
-- Location: {assumptions['city']}
-- Profit Margin: {assumptions['profit_margin_pct']}%
+- Yield: {assumptions["yield_pct"]}%
+- Solvent Recovery: {assumptions["solvent_recovery_pct"]}%
+- Location: {assumptions["city"]}
+- Profit Margin: {assumptions["profit_margin_pct"]}%
 """
 
     try:

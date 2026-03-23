@@ -64,14 +64,14 @@ async def generate_report(state: AgentState) -> AgentState:
     user_prompt = f"""Consolidate these analysis results into a final should-cost report.
 
 ## Planning Summary
-Product: {plan.get('product_name', 'Unknown')}
-Document type: {plan.get('document_type', 'ROS')}
+Product: {plan.get("product_name", "Unknown")}
+Document type: {plan.get("document_type", "ROS")}
 
 ## Assumptions
-- Yield: {assumptions['yield_pct']}%
-- Solvent Recovery: {assumptions['solvent_recovery_pct']}%
-- Location: {assumptions['city']}
-- Profit Margin: {assumptions['profit_margin_pct']}%
+- Yield: {assumptions["yield_pct"]}%
+- Solvent Recovery: {assumptions["solvent_recovery_pct"]}%
+- Location: {assumptions["city"]}
+- Profit Margin: {assumptions["profit_margin_pct"]}%
 
 ## Cost Computation Results
 Materials: {_safe_json(materials)}
