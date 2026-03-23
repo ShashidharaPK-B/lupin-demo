@@ -29,19 +29,21 @@ jobs:
       - name: Backend — lint
         run: >
           docker run --rm
-          -v "${env:GITHUB_WORKSPACE}\backend:/app" -w /app
+          -v "${env:GITHUB_WORKSPACE}\app\backend:/app" -w /app
           ${{ env.UV_IMAGE }}
           sh -c "uv sync --quiet && uv run ruff check app/ tests/ && uv run ruff format --check app/ tests/"
 
-      - name: Backend — start test DB
+      - name: Backend — start test DB & Redis
         run: |
           try { docker rm -f ci-postgres 2>&1 | Out-Null } catch {}
+          try { docker rm -f ci-redis 2>&1 | Out-Null } catch {}
           docker run -d --name ci-postgres `
             -e POSTGRES_USER=user `
             -e POSTGRES_PASSWORD=password `
             -e POSTGRES_DB=shouldcost_test `
             -p 5433:5432 `
             postgres:16-alpine
+          docker run -d --name ci-redis -p 6380:6379 redis:7-alpine
           for ($i = 1; $i -le 30; $i++) {
             try { docker exec ci-postgres pg_isready -U user 2>&1 | Out-Null } catch {}
             if ($LASTEXITCODE -eq 0) { break }
@@ -53,6 +55,7 @@ jobs:
           $envFile = "$env:TEMP\ci-test.env"
           Set-Content $envFile @(
             "DATABASE_URL=postgresql+asyncpg://user:password@host.docker.internal:5433/shouldcost_test"
+            "REDIS_URL=redis://host.docker.internal:6380/0"
             "AZURE_OPENAI_ENDPOINT=${{ secrets.AZURE_OPENAI_ENDPOINT }}"
             "AZURE_OPENAI_API_KEY=${{ secrets.AZURE_OPENAI_API_KEY }}"
             "AZURE_OPENAI_DEPLOYMENT_NAME=${{ secrets.AZURE_OPENAI_DEPLOYMENT_NAME }}"
@@ -62,20 +65,22 @@ jobs:
             'CORS_ORIGINS=["http://localhost:3000"]'
           ) -Encoding utf8
           docker run --rm `
-            -v "${env:GITHUB_WORKSPACE}\backend:/app" -w /app `
+            -v "${env:GITHUB_WORKSPACE}\app\backend:/app" -w /app `
             --env-file $envFile `
             ${{ env.UV_IMAGE }} `
             sh -c "uv sync --quiet && uv run pytest tests/ -v"
           Remove-Item $envFile -Force -ErrorAction SilentlyContinue
 
-      - name: Backend — cleanup test DB
+      - name: Backend — cleanup test DB & Redis
         if: always()
-        run: try { docker rm -f ci-postgres 2>&1 | Out-Null } catch {}
+        run: |
+          try { docker rm -f ci-postgres 2>&1 | Out-Null } catch {}
+          try { docker rm -f ci-redis 2>&1 | Out-Null } catch {}
 
       - name: Frontend — lint
         run: |
           $output = docker run --rm `
-            -v "${env:GITHUB_WORKSPACE}\frontend:/app" -w /app `
+            -v "${env:GITHUB_WORKSPACE}\app\frontend:/app" -w /app `
             ${{ env.NODE_IMAGE }} `
             sh -c "npm ci --legacy-peer-deps --silent 2>&1 && npm run lint 2>&1"
           $exitCode = $LASTEXITCODE
@@ -100,6 +105,7 @@ jobs:
     defaults:
       run:
         shell: powershell
+        working-directory: app
 
     steps:
       - name: Checkout code
@@ -114,11 +120,8 @@ jobs:
 
       - name: Build and deploy
         run: |
-          # Scale down existing stacks
           try { docker compose -p ${{ env.DEV_PROJECT }} down --remove-orphans 2>&1 | Out-Null } catch {}
           try { docker compose -p ${{ env.PROD_PROJECT }} -f docker-compose.prod.yml down --remove-orphans 2>&1 | Out-Null } catch {}
-
-          # Build and start
           docker compose -f docker-compose.prod.yml build
           docker compose -p ${{ env.PROD_PROJECT }} -f docker-compose.prod.yml up -d --remove-orphans
 
