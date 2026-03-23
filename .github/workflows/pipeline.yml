@@ -16,7 +16,7 @@ env:
 
 jobs:
   ci:
-    name: CI — Lint & Test
+    name: CI
     runs-on: self-hosted
     defaults:
       run:
@@ -25,18 +25,43 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Backend — lint
-        run: >
-          docker run --rm
-          -v "${env:GITHUB_WORKSPACE}\app\backend:/app" -w /app
-          ${{ env.UV_IMAGE }}
-          sh -c "uv sync --quiet && uv run ruff check app/ tests/ && uv run ruff format --check app/ tests/"
+      # ── Step 1: Secret Scan ──
+      - name: Secret scan (Gitleaks)
+        run: |
+          $VERSION = "8.21.2"
+          $zip = "$env:TEMP\gitleaks.zip"
+          Invoke-WebRequest -Uri "https://github.com/gitleaks/gitleaks/releases/download/v$VERSION/gitleaks_${VERSION}_windows_x64.zip" -OutFile $zip
+          Expand-Archive $zip -DestinationPath "$env:TEMP\gitleaks" -Force
+          & "$env:TEMP\gitleaks\gitleaks.exe" detect --source . --verbose --redact
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Backend — start test DB & Redis
+      # ── Step 2: Lint (Backend + Frontend) ──
+      - name: Lint
+        run: |
+          Write-Host "=== Backend Lint (ruff) ==="
+          docker run --rm `
+            -v "${env:GITHUB_WORKSPACE}\app\backend:/app" -w /app `
+            ${{ env.UV_IMAGE }} `
+            sh -c "uv sync --quiet && uv run ruff check app/ tests/ && uv run ruff format --check app/ tests/"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          Write-Host ""
+          Write-Host "=== Frontend Lint (ESLint) ==="
+          docker run --rm `
+            -v "${env:GITHUB_WORKSPACE}\app\frontend:/app" -w /app `
+            ${{ env.NODE_IMAGE }} `
+            sh -c "npm ci --legacy-peer-deps --silent 2>&1 && npm run lint 2>&1"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # ── Step 3: Test ──
+      - name: Test
         run: |
           try { docker rm -f ci-postgres 2>&1 | Out-Null } catch {}
           try { docker rm -f ci-redis 2>&1 | Out-Null } catch {}
+
           docker run -d --name ci-postgres `
             -e POSTGRES_USER=user `
             -e POSTGRES_PASSWORD=password `
@@ -44,14 +69,13 @@ jobs:
             -p 5433:5432 `
             postgres:16-alpine
           docker run -d --name ci-redis -p 6380:6379 redis:7-alpine
+
           for ($i = 1; $i -le 30; $i++) {
             try { docker exec ci-postgres pg_isready -U user 2>&1 | Out-Null } catch {}
             if ($LASTEXITCODE -eq 0) { break }
             Start-Sleep -Seconds 1
           }
 
-      - name: Backend — test
-        run: |
           $envFile = "$env:TEMP\ci-test.env"
           Set-Content $envFile @(
             "DATABASE_URL=postgresql+asyncpg://user:password@host.docker.internal:5433/shouldcost_test"
@@ -64,38 +88,37 @@ jobs:
             "UPLOAD_DIR=/tmp/uploads"
             'CORS_ORIGINS=["http://localhost:3000"]'
           ) -Encoding utf8
+
           docker run --rm `
             -v "${env:GITHUB_WORKSPACE}\app\backend:/app" -w /app `
             --env-file $envFile `
             ${{ env.UV_IMAGE }} `
             sh -c "uv sync --quiet && uv run pytest tests/ -v"
-          Remove-Item $envFile -Force -ErrorAction SilentlyContinue
+          $testExit = $LASTEXITCODE
 
-      - name: Backend — cleanup test DB & Redis
-        if: always()
-        run: |
+          Remove-Item $envFile -Force -ErrorAction SilentlyContinue
           try { docker rm -f ci-postgres 2>&1 | Out-Null } catch {}
           try { docker rm -f ci-redis 2>&1 | Out-Null } catch {}
 
-      - name: Frontend — lint
+          if ($testExit -ne 0) { exit $testExit }
+
+      # ── Step 4: SonarQube Scan ──
+      - name: SonarQube scan
         run: |
-          $output = docker run --rm `
-            -v "${env:GITHUB_WORKSPACE}\app\frontend:/app" -w /app `
-            ${{ env.NODE_IMAGE }} `
-            sh -c "npm ci --legacy-peer-deps --silent 2>&1 && npm run lint 2>&1"
-          $exitCode = $LASTEXITCODE
-          Write-Host $output
-          $fence = '```'
-          Add-Content $env:GITHUB_STEP_SUMMARY "## Frontend ESLint Summary"
-          if ($exitCode -eq 0) {
-            Add-Content $env:GITHUB_STEP_SUMMARY "All checks passed - no warnings or errors"
-          } else {
-            Add-Content $env:GITHUB_STEP_SUMMARY "Lint failed:"
-            Add-Content $env:GITHUB_STEP_SUMMARY $fence
-            Add-Content $env:GITHUB_STEP_SUMMARY $output
-            Add-Content $env:GITHUB_STEP_SUMMARY $fence
-            exit $exitCode
+          docker run --rm `
+            -v "${env:GITHUB_WORKSPACE}:/usr/src" `
+            -e SONAR_HOST_URL="${{ secrets.SONAR_HOST_URL }}" `
+            -e SONAR_TOKEN="${{ secrets.SONAR_TOKEN }}" `
+            sonarsource/sonar-scanner-cli `
+            -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }} `
+            -Dsonar.sources=app/backend/app,app/frontend/src `
+            -Dsonar.exclusions="**/node_modules/**,**/.venv/**,**/dist/**,**/__pycache__/**" `
+            -Dsonar.python.version=3.11
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "SonarQube scan failed - check configuration"
+            exit $LASTEXITCODE
           }
+        continue-on-error: true
 
   deploy:
     name: Deploy
@@ -120,7 +143,6 @@ jobs:
 
       - name: Build and deploy
         run: |
-          # Stop any stacks that may hold ports (dev, prod, or default 'app' project)
           try { docker compose -p ${{ env.DEV_PROJECT }} down --remove-orphans 2>&1 | Out-Null } catch {}
           try { docker compose -p app down --remove-orphans 2>&1 | Out-Null } catch {}
           try { docker compose -p ${{ env.PROD_PROJECT }} -f docker-compose.prod.yml down --remove-orphans 2>&1 | Out-Null } catch {}
