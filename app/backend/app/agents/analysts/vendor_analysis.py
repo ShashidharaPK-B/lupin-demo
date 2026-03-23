@@ -49,9 +49,12 @@ async def analyze_vendors(state: AgentState) -> AgentState:
         logger.info("VendorAnalysis: No materials to analyze, skipping")
         return {**state, "vendor_analysis": {"vendor_suggestions": [], "total_potential_savings": 0}}
 
-    material_list = "\n".join([f"- {m.get('name', 'Unknown')}: {m.get('quantity', '?')} {m.get('unit', '')}" for m in materials])
-
-    user_prompt = f"""Suggest alternate vendors for these materials used in {state['assumptions'].get('city', 'unknown')}:
+    material_list = "\n".join([
+        f"- {m.get('name', 'Unknown')}: {m.get('quantity', '?')} {m.get('unit', '')}"
+        for m in materials
+    ])
+    city = state["assumptions"].get("city", "unknown")
+    user_prompt = f"""Suggest alternate vendors for these materials used in {city}:
 
 {material_list}
 """

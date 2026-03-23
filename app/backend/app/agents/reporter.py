@@ -111,7 +111,10 @@ Generate the final consolidated report with accurate totals.
                 "per_unit_cost": 0,
                 "currency": "USD",
                 "assumptions": assumptions,
-                "line_items": [{"name": m.get("name", "?"), "total_cost": m.get("total_cost", 0), "category": m.get("category")} for m in materials],
+                "line_items": [
+                    {"name": m.get("name", "?"), "total_cost": m.get("total_cost", 0), "category": m.get("category")}
+                    for m in materials
+                ],
                 "summary": f"Report generation partially failed ({e}). Cost data from analyst agents shown.",
             },
         }
