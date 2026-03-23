@@ -120,7 +120,9 @@ jobs:
 
       - name: Build and deploy
         run: |
+          # Stop any stacks that may hold ports (dev, prod, or default 'app' project)
           try { docker compose -p ${{ env.DEV_PROJECT }} down --remove-orphans 2>&1 | Out-Null } catch {}
+          try { docker compose -p app down --remove-orphans 2>&1 | Out-Null } catch {}
           try { docker compose -p ${{ env.PROD_PROJECT }} -f docker-compose.prod.yml down --remove-orphans 2>&1 | Out-Null } catch {}
           docker compose -f docker-compose.prod.yml build
           docker compose -p ${{ env.PROD_PROJECT }} -f docker-compose.prod.yml up -d --remove-orphans
